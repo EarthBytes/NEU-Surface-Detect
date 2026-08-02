@@ -6,3 +6,7 @@ dataset
 
 # Virtual environment
 .venv/
+
+# Model outputs
+models/checkpoints/
+models/evaluation/
