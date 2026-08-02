@@ -3,3 +3,6 @@
 
 # NEU Dataset
 dataset
+
+# Virtual environment
+.venv/
