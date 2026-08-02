@@ -79,27 +79,18 @@ def build_report(root: Path) -> dict:
     val_total = sum(split_counts.get("validation", {}).values())
 
     return {
-        "dataset_path": str(root),
         "exists": True,
         "splits": list(SPLITS),
         "classes": CLASS_NAMES,
         "images_per_class": split_counts,
         "totals": {"train": train_total, "validation": val_total, "all": train_total + val_total},
         "image_stats": image_stats,
-        "annotation_counts": annotation_counts,
-        "recommendation": (
-            "Start with classification only. All images are 200x200 greyscale with "
-            "balanced class counts. Pascal VOC XML annotations are available for "
-            "future object-detection work."
-        ),
+        "annotation_counts": annotation_counts,   
     }
 
 
 def print_report(report: dict) -> None:
-    print("=" * 60)
     print("NEU-DET Dataset Inspection Report")
-    print("=" * 60)
-    print(f"Path: {report['dataset_path']}")
 
     if not report.get("exists"):
         print(f"\n{report['message']}")
@@ -130,9 +121,6 @@ def print_report(report: dict) -> None:
 
     ann = report["annotation_counts"]
     print(f"\nAnnotations: train={ann.get('train', 0)}, validation={ann.get('validation', 0)}")
-
-    print(f"\nRecommendation: {report['recommendation']}")
-    print("=" * 60)
 
 
 def main() -> int:
