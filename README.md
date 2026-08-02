@@ -10,11 +10,11 @@ Build a production-ready computer vision system that:
 - Trains a defect classification model with PyTorch
 - Tracks experiments and model versions with MLflow
 - Serves predictions through a FastAPI API
-- Supports containerized deployment, CI/CD, monitoring, and retraining
+- Supports containerised deployment, CI/CD, monitoring, and retraining
 
 ## Defect Classes
 
-The dataset contains six grayscale defect categories:
+The dataset contains six greyscale defect categories:
 
 | Class | Description |
 |-------|-------------|
@@ -29,7 +29,7 @@ The dataset contains six grayscale defect categories:
 
 ```text
 NEU-Surface-Detect/
-├── data_ingestion/     # Download, organize, and inspect dataset
+├── data_ingestion/     # Download, organise, and inspect dataset
 ├── training/           # Model training pipeline
 ├── models/             # Saved checkpoints and MLflow registry
 ├── inference/          # FastAPI prediction service
@@ -45,6 +45,6 @@ NEU-Surface-Detect/
 - Python 3.10 or 3.11
 - macOS, Linux, or WSL
 
-## License
+## Licence
 
 See [LICENSE](LICENSE).
