@@ -39,7 +39,16 @@ jobs:
 
       - name: Install dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Install project (editable)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Sanity — show inference path
+        run: python -c "import inference; print('inference ->', getattr(inference, '__file__', str(inference)))"
 
       - name: Run pytest
         run: pytest tests/ -v
