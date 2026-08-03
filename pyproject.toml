@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,9 +8,9 @@ version = "0.1.0"
 description = "MLOps pipeline for NEU surface defect classification"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = []
 
 [tool.setuptools.packages.find]
+where = ["."]
 include = ["data_ingestion*", "training*", "inference*", "monitoring*"]
 
 [tool.pytest.ini_options]
