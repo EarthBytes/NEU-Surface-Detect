@@ -68,7 +68,7 @@ def log_model_artifact(
     mlflow.log_dict(metadata, "processed_metadata.json")
 
     image_size = metadata.get("image_size", 224)
-    input_example = torch.randn(1, 3, image_size, image_size)
+    input_example = torch.randn(1, 3, image_size, image_size).numpy()
 
     model_info = mlflow.pytorch.log_model(
         model,
