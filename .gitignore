@@ -12,3 +12,9 @@ models/checkpoints/
 models/evaluation/
 models/mlruns/
 models/mlflow.db
+
+# Pycache and MLruns
+training/__pycache__
+inference/__pycache__
+data_ingestion/__pycache__
+mlruns/1
