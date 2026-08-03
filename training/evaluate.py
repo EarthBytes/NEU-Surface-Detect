@@ -9,6 +9,7 @@ import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -20,19 +21,14 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from torchvision import models
 
 from data_ingestion.config import CLASS_NAMES
 from training.dataset import create_dataloaders
+from training.mlflow_tracking import configure_mlflow, log_summary_metrics
+from training.model import build_model
 from training.utils import get_device, load_config, resolve_path, setup_logging
 
 logger = setup_logging(__name__)
-
-
-def build_model(num_classes: int) -> nn.Module:
-    model = models.resnet18(weights=None)
-    model.fc = nn.Linear(model.fc.in_features, num_classes)
-    return model
 
 
 def collect_predictions(
@@ -103,7 +99,7 @@ def summarise_misclassifications(
             key = (true_label, pred_label)
             pairs[key] = pairs.get(key, 0) + 1
 
-    summary = [
+    return [
         {
             "true_class": class_names[true_label],
             "predicted_class": class_names[pred_label],
@@ -115,13 +111,17 @@ def summarise_misclassifications(
             reverse=True,
         )
     ]
-    return summary
 
 
-def evaluate(config_path: Path | None = None, checkpoint_path: Path | None = None) -> Path:
+def evaluate(
+    config_path: Path | None = None,
+    checkpoint_path: Path | None = None,
+    run_id: str | None = None,
+) -> Path:
     config = load_config(config_path)
     data_cfg = config["data"]
     model_cfg = config["model"]
+    mlflow_cfg = config["mlflow"]
     device = get_device()
 
     processed_root = resolve_path(config["paths"]["processed_data"]) / data_cfg["processed_version"]
@@ -146,10 +146,12 @@ def evaluate(config_path: Path | None = None, checkpoint_path: Path | None = Non
     y_true, y_pred = collect_predictions(model, test_loader, device)
 
     metrics = {
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "precision_macro": float(precision_score(y_true, y_pred, average="macro", zero_division=0)),
-        "recall_macro": float(recall_score(y_true, y_pred, average="macro", zero_division=0)),
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
+        "test_accuracy": float(accuracy_score(y_true, y_pred)),
+        "test_precision_macro": float(
+            precision_score(y_true, y_pred, average="macro", zero_division=0)
+        ),
+        "test_recall_macro": float(recall_score(y_true, y_pred, average="macro", zero_division=0)),
+        "test_f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
         "checkpoint": str(checkpoint),
         "processed_version": data_cfg["processed_version"],
         "classification_report": classification_report(
@@ -171,10 +173,28 @@ def evaluate(config_path: Path | None = None, checkpoint_path: Path | None = Non
     save_confusion_matrix(matrix, CLASS_NAMES, matrix_path)
     np.savetxt(matrix_csv_path, matrix, fmt="%d", delimiter=",", header=",".join(CLASS_NAMES))
 
-    logger.info("Test accuracy:  %.4f", metrics["accuracy"])
-    logger.info("Precision (macro): %.4f", metrics["precision_macro"])
-    logger.info("Recall (macro):    %.4f", metrics["recall_macro"])
-    logger.info("F1 (macro):        %.4f", metrics["f1_macro"])
+    configure_mlflow(mlflow_cfg["tracking_uri"], mlflow_cfg["experiment_name"])
+    resolved_run_id = run_id or checkpoint_data.get("run_id")
+    if resolved_run_id:
+        with mlflow.start_run(run_id=resolved_run_id):
+            log_summary_metrics(
+                {
+                    "test_accuracy": metrics["test_accuracy"],
+                    "test_precision_macro": metrics["test_precision_macro"],
+                    "test_recall_macro": metrics["test_recall_macro"],
+                    "test_f1_macro": metrics["test_f1_macro"],
+                }
+            )
+            mlflow.log_artifact(str(metrics_path), artifact_path="evaluation")
+            mlflow.log_artifact(str(matrix_path), artifact_path="evaluation")
+            logger.info("Logged test metrics to MLflow run %s", resolved_run_id)
+    else:
+        logger.warning("No MLflow run ID found; test metrics saved locally only")
+
+    logger.info("Test accuracy:  %.4f", metrics["test_accuracy"])
+    logger.info("Precision (macro): %.4f", metrics["test_precision_macro"])
+    logger.info("Recall (macro):    %.4f", metrics["test_recall_macro"])
+    logger.info("F1 (macro):        %.4f", metrics["test_f1_macro"])
     logger.info("Results saved to %s", evaluation_dir)
 
     if metrics["misclassifications"]:
@@ -194,10 +214,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate the trained defect classifier.")
     parser.add_argument("--config", type=Path, default=None, help="Path to config YAML")
     parser.add_argument("--checkpoint", type=Path, default=None, help="Optional checkpoint path")
+    parser.add_argument("--run-id", type=str, default=None, help="Optional MLflow run ID")
     args = parser.parse_args()
 
     try:
-        evaluate(args.config, args.checkpoint)
+        evaluate(args.config, args.checkpoint, args.run_id)
     except FileNotFoundError as exc:
         logger.error("%s", exc)
         return 1

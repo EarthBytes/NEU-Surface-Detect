@@ -26,3 +26,13 @@ paths:
   processed_data: dataset/processed
   checkpoints: models/checkpoints
   evaluation: models/evaluation
+
+mlflow:
+  tracking_uri: sqlite:///models/mlflow.db
+  experiment_name: neu-surface-defect
+  registered_model_name: neu-defect-classifier
+
+inference:
+  checkpoint: models/checkpoints/best_model.pt
+  host: 0.0.0.0
+  port: 8000
