@@ -1,0 +1,4 @@
+data_ingestion
+inference
+monitoring
+training

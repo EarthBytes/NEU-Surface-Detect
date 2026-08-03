@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neu-surface-detect"
+version = "0.1.0"
+description = "MLOps pipeline for NEU surface defect classification"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["data_ingestion*", "training*", "inference*", "monitoring*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
