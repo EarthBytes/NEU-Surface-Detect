@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import random
 import shutil
 from datetime import datetime, timezone
@@ -14,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from data_ingestion.config import CLASS_NAMES, NEU_DET_ROOT, PROCESSED_DATA_ROOT
+from data_ingestion.config import CLASS_NAMES, NEU_DET_ROOT
 from training.utils import load_config, resolve_path, set_seed, setup_logging
 
 logger = setup_logging(__name__)

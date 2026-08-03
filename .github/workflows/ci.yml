@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Run Ruff
+        run: ruff check .
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run pytest
+        run: pytest tests/ -v
+
+  docker:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Create fixture checkpoint for the image
+        run: |
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
+          python tests/create_fixture_checkpoint.py
+
+      - name: Build inference image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: inference/Dockerfile
+          push: false
+          tags: neu-surface-detect-api:ci
+
+      - name: Smoke test container
+        run: |
+          docker run -d --name neu-api -p 8000:8000 neu-surface-detect-api:ci
+          for i in {1..30}; do
+            if curl -sf http://localhost:8000/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs neu-api
+          exit 1
+
+  deploy-staging:
+    name: Deploy to staging
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+    steps:
+      - name: Placeholder — staging deployment
+        run: |
+          echo "Wire up container registry push and staging rollout here."
+          echo "Example: docker push ghcr.io/${{ github.repository }}:staging"
+
+  deploy-production:
+    name: Deploy to production
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Placeholder — production deployment
+        run: |
+          echo "Wire up production promotion after manual approval."
+          echo "Example: kubectl rollout restart deployment/neu-surface-detect-api"

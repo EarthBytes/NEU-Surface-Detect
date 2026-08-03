@@ -1,0 +1,18 @@
+target-version = "py310"
+line-length = 100
+
+[lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+exclude = [
+    ".venv",
+    "dataset",
+    "docs",
+    "mlruns",
+    "models/checkpoints",
+    "models/evaluation",
+]
+
+[lint.per-file-ignores]
+"tests/*" = ["S101"]
