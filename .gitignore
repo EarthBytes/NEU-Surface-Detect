@@ -17,4 +17,6 @@ models/mlflow.db
 training/__pycache__
 inference/__pycache__
 data_ingestion/__pycache__
-mlruns/1
+mlruns/
+.pytest_cache/
+.ruff_cache/1

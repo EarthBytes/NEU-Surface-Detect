@@ -85,7 +85,7 @@ def build_report(root: Path) -> dict:
         "images_per_class": split_counts,
         "totals": {"train": train_total, "validation": val_total, "all": train_total + val_total},
         "image_stats": image_stats,
-        "annotation_counts": annotation_counts,   
+        "annotation_counts": annotation_counts,
     }
 
 
