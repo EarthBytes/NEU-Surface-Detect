@@ -9,20 +9,27 @@ from typing import AsyncIterator
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from inference.predictor import DefectPredictor, create_predictor
-from inference.schemas import HealthResponse, PredictionResponse
+from inference.schemas import HealthResponse, MonitoringSummaryResponse, PredictionResponse
+from monitoring.inference_monitor import InferenceMonitor
 from training.utils import load_config, setup_logging
 
 logger = setup_logging(__name__)
 
 predictor: DefectPredictor | None = None
+monitor: InferenceMonitor | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global predictor
+    global predictor, monitor
+    config = load_config()
+    monitor = InferenceMonitor(config)
     try:
         model_checkpoint = os.getenv("MODEL_CHECKPOINT")
         predictor = create_predictor(model_checkpoint)
+        if monitor.enabled and predictor.metadata:
+            normalisation = predictor.metadata.get("normalisation", {})
+            monitor.tracker.brightness_baseline = float(normalisation.get("mean", 0.5045))
         logger.info(
             "Inference model loaded successfully from %s",
             getattr(predictor, "checkpoint_path", "unknown"),
@@ -68,7 +75,17 @@ async def predict(file: UploadFile = File(...)) -> PredictionResponse:
         logger.exception("Prediction failed")
         raise HTTPException(status_code=422, detail=f"Could not process image: {exc}") from exc
 
+    if monitor is not None:
+        monitor.record_prediction(image_bytes, result)
+
     return PredictionResponse(**result)
+
+
+@app.get("/monitoring/summary", response_model=MonitoringSummaryResponse)
+async def monitoring_summary() -> MonitoringSummaryResponse:
+    if monitor is None:
+        raise HTTPException(status_code=503, detail="Monitoring is not initialised")
+    return MonitoringSummaryResponse(**monitor.summary())
 
 
 def main() -> None:

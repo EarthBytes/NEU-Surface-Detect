@@ -10,7 +10,7 @@ def test_class_names_count() -> None:
 
 def test_config_loads_required_sections() -> None:
     config = load_config()
-    for section in ("data", "model", "training", "mlflow", "inference", "paths"):
+    for section in ("data", "model", "training", "mlflow", "inference", "monitoring", "paths"):
         assert section in config
 
 

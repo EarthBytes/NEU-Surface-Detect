@@ -11,6 +11,7 @@ dataset
 # Model outputs
 models/checkpoints/
 models/evaluation/
+models/monitoring/
 models/mlruns/
 models/mlflow.db
 

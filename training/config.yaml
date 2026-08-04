@@ -36,3 +36,11 @@ inference:
   checkpoint: models/checkpoints/best_model.pt
   host: 0.0.0.0
   port: 8000
+
+monitoring:
+  enabled: true
+  log_path: models/monitoring/predictions.jsonl
+  drift_window_size: 100
+  low_confidence_threshold: 0.5
+  class_share_threshold: 0.6
+  brightness_tolerance: 0.15
