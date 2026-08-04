@@ -68,6 +68,8 @@ jobs:
         run: |
           pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
           pip install -r requirements.txt
+          python -m pip install --upgrade pip
+          python -m pip install -e .
           python tests/create_fixture_checkpoint.py
 
       - name: Build inference image
