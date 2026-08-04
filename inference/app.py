@@ -1,6 +1,7 @@
 """FastAPI service for NEU surface defect classification."""
 
 from __future__ import annotations
+import os
 
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -20,8 +21,12 @@ predictor: DefectPredictor | None = None
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global predictor
     try:
-        predictor = create_predictor()
-        logger.info("Inference model loaded successfully")
+        model_checkpoint = os.getenv("MODEL_CHECKPOINT")
+        predictor = create_predictor(model_checkpoint)
+        logger.info(
+            "Inference model loaded successfully from %s",
+            getattr(predictor, "checkpoint_path", "unknown"),
+        )
     except FileNotFoundError as exc:
         logger.error("Could not load model: %s", exc)
         predictor = None
