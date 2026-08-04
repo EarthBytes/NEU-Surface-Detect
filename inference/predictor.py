@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import io
 import logging
 from pathlib import Path
@@ -27,6 +28,8 @@ class DefectPredictor:
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
 
+        self.checkpoint_path = str(checkpoint)
+        
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         metadata = checkpoint.get("metadata")
         if metadata is None:
@@ -70,7 +73,41 @@ class DefectPredictor:
         }
 
 
-def create_predictor(config_path: Path | None = None) -> DefectPredictor:
+def _resolve_checkpoint_path(
+    checkpoint_path: str | Path | None,
+    config_path: Path | None,
+) -> Path:
     config = load_config(config_path)
-    checkpoint_path = resolve_path(config["inference"]["checkpoint"])
-    return DefectPredictor(checkpoint_path, config_path)
+
+    if checkpoint_path:
+        ckpt = Path(checkpoint_path)
+    else:
+        ckpt = resolve_path(config["inference"]["checkpoint"])
+
+    if ckpt.exists():
+        return ckpt
+
+    search_dirs: list[Path] = []
+    tmpdir = os.getenv("TMPDIR") or "/tmp"
+    search_dirs.append(Path(tmpdir))
+    search_dirs.append(Path.cwd())
+
+    candidates: list[Path] = []
+    for root in search_dirs:
+        if root.exists():
+            candidates.extend(root.rglob("best_model.pt"))
+
+    if candidates:
+        resolved = candidates[0]
+        logger.info("Found checkpoint at %s (fallback search)", resolved)
+        return resolved
+
+    raise FileNotFoundError(f"Checkpoint not found at {ckpt}")
+
+
+def create_predictor(
+    checkpoint_path: str | Path | None = None,
+    config_path: Path | None = None,
+) -> DefectPredictor:
+    resolved = _resolve_checkpoint_path(checkpoint_path, config_path)
+    return DefectPredictor(resolved, config_path)
