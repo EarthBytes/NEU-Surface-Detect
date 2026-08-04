@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY data_ingestion/ data_ingestion/
 COPY training/ training/
+COPY monitoring/ monitoring/
 COPY inference/ inference/
 COPY models/ models/
 

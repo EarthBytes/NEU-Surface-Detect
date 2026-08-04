@@ -14,5 +14,4 @@ models/checkpoints/*
 !README.md
 cicd
 scripts
-monitoring
 tests
