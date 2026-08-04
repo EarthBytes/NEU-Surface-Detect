@@ -3,25 +3,34 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
       - name: Install Ruff
-        run: pip install ruff
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ruff
 
       - name: Run Ruff
         run: ruff check .
@@ -29,6 +38,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+
     steps:
       - uses: actions/checkout@v4
 
@@ -40,78 +51,100 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Install project (editable)
-        run: |
-          python -m pip install --upgrade pip
+          python -m pip install \
+            -r requirements.txt \
+            -r requirements-dev.txt
           python -m pip install -e .
 
-      - name: Sanity — show inference path
-        run: python -c "import inference; print('inference ->', getattr(inference, '__file__', str(inference)))"
-
-      - name: Run pytest
+      - name: Run tests
         run: pytest tests/ -v
 
   docker:
     name: Build Docker image
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs:
+      - lint
+      - test
+    timeout-minutes: 30
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+          cache: pip
 
-      - name: Create fixture checkpoint for the image
+      - name: Install build dependencies
         run: |
-          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-          pip install -r requirements.txt
           python -m pip install --upgrade pip
+          python -m pip install \
+            torch \
+            torchvision \
+            --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -r requirements.txt
           python -m pip install -e .
-          python tests/create_fixture_checkpoint.py
 
-      - name: Build inference image
+      - name: Create fixture checkpoint
+        run: python tests/create_fixture_checkpoint.py
+
+      - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: inference/Dockerfile
-          push: false
           tags: neu-surface-detect-api:ci
+          push: false
 
-      - name: Smoke test container
+      - name: Start container
         run: |
-          docker run -d --name neu-api -p 8000:8000 neu-surface-detect-api:ci
+          docker run -d \
+            --name neu-api \
+            -p 8000:8000 \
+            neu-surface-detect-api:ci
+
+      - name: Wait for API health check
+        run: |
           for i in {1..30}; do
-            if curl -sf http://localhost:8000/health; then
+            if curl -fs http://localhost:8000/health; then
               exit 0
             fi
             sleep 2
           done
-          docker logs neu-api
+
+          echo "Container failed health check."
           exit 1
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs neu-api
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f neu-api || true
 
   deploy-staging:
     name: Deploy to staging
     runs-on: ubuntu-latest
-    needs: [docker]
+    needs: docker
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: staging
+
     steps:
-      - name: Placeholder — staging deployment
+      - name: Placeholder - staging deployment
         run: |
-          echo "Wire up container registry push and staging rollout here."
-          echo "Example: docker push ghcr.io/${{ github.repository }}:staging"
+          echo "Build and push image to your container registry."
+          echo "Deploy updated image to the staging environment."
 
   deploy-production:
     name: Deploy to production
     runs-on: ubuntu-latest
-    needs: [deploy-staging]
+    needs: deploy-staging
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: production
+
     steps:
-      - name: Placeholder — production deployment
+      - name: Placeholder - production deployment
         run: |
-          echo "Wire up production promotion after manual approval."
-          echo "Example: kubectl rollout restart deployment/neu-surface-detect-api"
+          echo "Promote the validated image to production."
+          echo "Trigger Kubernetes or ECS rollout after approval."
