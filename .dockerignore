@@ -6,10 +6,10 @@ docs
 mlruns
 **/__pycache__
 *.pyc
-*.pt
-models/checkpoints
 models/evaluation
 models/mlflow.db
+models/checkpoints/*
+!models/checkpoints/best_model.pt
 *.md
 !README.md
 cicd

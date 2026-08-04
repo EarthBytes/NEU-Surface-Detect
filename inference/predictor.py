@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import io
 import logging
+import os
 from pathlib import Path
 
 import torch
@@ -28,8 +28,8 @@ class DefectPredictor:
         if not checkpoint_path.exists():
             raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
 
-        self.checkpoint_path = str(checkpoint)
-        
+        self.checkpoint_path = str(checkpoint_path)
+
         checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
         metadata = checkpoint.get("metadata")
         if metadata is None:
