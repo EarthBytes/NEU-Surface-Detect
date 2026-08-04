@@ -6,6 +6,7 @@ dataset
 
 # Virtual environment
 .venv/
+*.egg-info/
 
 # Model outputs
 models/checkpoints/

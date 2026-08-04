@@ -17,8 +17,10 @@ inference_app = import_module("inference.app")
 
 
 @pytest.fixture
-def fixture_checkpoint(tmp_path: Path) -> Path:
-    return create_checkpoint(tmp_path / "best_model.pt")
+def fixture_checkpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    checkpoint = create_checkpoint(tmp_path / "best_model.pt")
+    monkeypatch.setenv("MODEL_CHECKPOINT", str(checkpoint))
+    return checkpoint
 
 
 @pytest.fixture
@@ -32,8 +34,7 @@ def predictor(fixture_checkpoint: Path) -> DefectPredictor:
 
 
 @pytest.fixture
-def api_client(predictor: DefectPredictor) -> TestClient:
-    inference_app.predictor = predictor
+def api_client(fixture_checkpoint: Path) -> TestClient:
     with TestClient(inference_app.app) as client:
         yield client
 
