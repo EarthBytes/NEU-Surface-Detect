@@ -22,6 +22,7 @@ from sklearn.metrics import (
 )
 
 from data_ingestion.config import CLASS_NAMES
+from training.data_source import DatasetSourceError, resolve_processed_root
 from training.dataset import create_dataloaders
 from training.mlflow_tracking import configure_mlflow, log_summary_metrics
 from training.model import build_model
@@ -123,7 +124,7 @@ def evaluate(
     mlflow_cfg = config["mlflow"]
     device = get_device()
 
-    processed_root = resolve_path(config["paths"]["processed_data"]) / data_cfg["processed_version"]
+    processed_root = resolve_processed_root(config)
     checkpoint = checkpoint_path or (
         resolve_path(config["paths"]["checkpoints"]) / config["training"]["checkpoint_name"]
     )
@@ -218,7 +219,7 @@ def main() -> int:
 
     try:
         evaluate(args.config, args.checkpoint, args.run_id)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, DatasetSourceError) as exc:
         logger.error("%s", exc)
         return 1
     return 0
