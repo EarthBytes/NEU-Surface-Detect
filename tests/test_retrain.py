@@ -9,7 +9,6 @@ import pytest
 import torch
 
 from training.compare_models import compare_models
-from training.metrics import evaluate_checkpoint
 
 
 def test_compare_models_picks_challenger_when_better(tmp_path: Path) -> None:
