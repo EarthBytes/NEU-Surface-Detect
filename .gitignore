@@ -3,6 +3,7 @@
 
 # NEU Dataset
 dataset
+.cache/
 
 # Virtual environment
 .venv/
@@ -22,3 +23,6 @@ data_ingestion/__pycache__
 mlruns/
 .pytest_cache/
 .ruff_cache/
+
+# Env files
+.env

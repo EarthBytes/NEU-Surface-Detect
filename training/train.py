@@ -11,6 +11,7 @@ import torch
 import torch.nn as nn
 from torch.optim import Adam
 
+from training.data_source import DatasetSourceError, resolve_processed_root
 from training.dataset import create_dataloaders
 from training.mlflow_tracking import (
     configure_mlflow,
@@ -92,7 +93,7 @@ def train(config_path: Path | None = None, epochs_override: int | None = None) -
     device = get_device()
     configure_mlflow(mlflow_cfg["tracking_uri"], mlflow_cfg["experiment_name"])
 
-    processed_root = resolve_path(config["paths"]["processed_data"]) / data_cfg["processed_version"]
+    processed_root = resolve_processed_root(config)
     checkpoint_dir = resolve_path(config["paths"]["checkpoints"])
     checkpoint_path = checkpoint_dir / train_cfg["checkpoint_name"]
 
@@ -193,7 +194,7 @@ def main() -> int:
 
     try:
         train(args.config, epochs_override=args.epochs)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, DatasetSourceError) as exc:
         logger.error("%s", exc)
         return 1
     return 0

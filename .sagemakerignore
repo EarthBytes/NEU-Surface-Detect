@@ -1,0 +1,11 @@
+.cache/
+dataset/
+models/
+.git/
+.venv/
+.ruff_cache/
+.pytest_cache/
+__pycache__/
+*.egg-info/
+.github/
+docs/

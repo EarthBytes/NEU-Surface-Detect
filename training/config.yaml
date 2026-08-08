@@ -4,6 +4,16 @@ data:
   test_ratio: 0.15
   seed: 42
 
+# Dataset location for training and evaluation.
+# source: local  -> read from paths.processed_data (repo dataset/ folder)
+# source: s3     -> sync from S3 into cache_dir, then train from cache
+# Override at runtime: DATA_SOURCE=s3 python -m training.train
+dataset:
+  source: s3
+  bucket: neu-cnn-surface-detect
+  prefix: dataset/
+  cache_dir: .cache/dataset
+
 model:
   architecture: resnet18
   pretrained: true
@@ -44,3 +54,16 @@ monitoring:
   low_confidence_threshold: 0.5
   class_share_threshold: 0.6
   brightness_tolerance: 0.15
+
+# AWS SageMaker GPU training (launched from your machine via launch_aws_training).
+# Credentials and role ARN come from the environment — never commit secrets.
+aws:
+  region: eu-west-1
+  bucket: neu-cnn-surface-detect
+  output_prefix: training-output/
+  sagemaker_role_arn: null  # or set SAGEMAKER_ROLE_ARN in the environment
+  instance_type: ml.g4dn.xlarge
+  instance_count: 1
+  max_runtime_seconds: 3600
+  pytorch_version: "2.0.0"
+  python_version: py310

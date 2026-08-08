@@ -15,6 +15,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = Path(__file__).resolve().parent / "config.yaml"
 
 
+def load_dotenv_file() -> None:
+    """Load variables from a project-root ``.env`` file if python-dotenv is installed."""
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv(env_path)
+
+
 def setup_logging(name: str, level: int = logging.INFO) -> logging.Logger:
     logging.basicConfig(
         level=level,
