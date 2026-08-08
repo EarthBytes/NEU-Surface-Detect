@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 from pathlib import Path
 
 import mlflow
@@ -15,6 +16,7 @@ from training.data_source import DatasetSourceError, resolve_processed_root
 from training.dataset import create_dataloaders
 from training.mlflow_tracking import (
     configure_mlflow,
+    is_mlflow_enabled,
     log_epoch_metrics,
     log_model_artifact,
     log_summary_metrics,
@@ -91,7 +93,9 @@ def train(config_path: Path | None = None, epochs_override: int | None = None) -
 
     set_seed(data_cfg["seed"])
     device = get_device()
-    configure_mlflow(mlflow_cfg["tracking_uri"], mlflow_cfg["experiment_name"])
+    mlflow_enabled = is_mlflow_enabled(mlflow_cfg["tracking_uri"])
+    if mlflow_enabled:
+        configure_mlflow(mlflow_cfg["tracking_uri"], mlflow_cfg["experiment_name"])
 
     processed_root = resolve_processed_root(config)
     checkpoint_dir = resolve_path(config["paths"]["checkpoints"])
@@ -116,23 +120,29 @@ def train(config_path: Path | None = None, epochs_override: int | None = None) -
     best_epoch = 0
     logger.info("Training on %s with %d epochs", device, epochs)
 
-    with mlflow.start_run(run_name="resnet18-training") as run:
-        log_training_params(config)
-        mlflow.set_tag("processed_version", data_cfg["processed_version"])
+    run_context = (
+        mlflow.start_run(run_name="resnet18-training") if mlflow_enabled else nullcontext()
+    )
+    with run_context as run:
+        run_id = run.info.run_id if run is not None else None
+        if mlflow_enabled:
+            log_training_params(config)
+            mlflow.set_tag("processed_version", data_cfg["processed_version"])
 
         for epoch in range(1, epochs + 1):
             train_loss, train_accuracy = run_epoch(model, train_loader, criterion, optimiser, device)
             val_loss, val_accuracy = run_epoch(model, val_loader, criterion, None, device)
 
-            log_epoch_metrics(
-                epoch,
-                {
-                    "train_loss": train_loss,
-                    "train_accuracy": train_accuracy,
-                    "val_loss": val_loss,
-                    "val_accuracy": val_accuracy,
-                },
-            )
+            if mlflow_enabled:
+                log_epoch_metrics(
+                    epoch,
+                    {
+                        "train_loss": train_loss,
+                        "train_accuracy": train_accuracy,
+                        "val_loss": val_loss,
+                        "val_accuracy": val_accuracy,
+                    },
+                )
 
             if val_accuracy > best_val_accuracy:
                 best_val_accuracy = val_accuracy
@@ -143,7 +153,7 @@ def train(config_path: Path | None = None, epochs_override: int | None = None) -
                     metadata,
                     epoch,
                     val_accuracy,
-                    run_id=run.info.run_id,
+                    run_id=run_id,
                 )
                 logger.info(
                     "Epoch %02d: train_loss=%.4f, val_loss=%.4f, val_acc=%.4f (new best)",
@@ -162,24 +172,25 @@ def train(config_path: Path | None = None, epochs_override: int | None = None) -
                     val_accuracy,
                 )
 
-        log_summary_metrics(
-            {
-                "best_val_accuracy": best_val_accuracy,
-                "best_epoch": float(best_epoch),
-            }
-        )
+        if mlflow_enabled:
+            log_summary_metrics(
+                {
+                    "best_val_accuracy": best_val_accuracy,
+                    "best_epoch": float(best_epoch),
+                }
+            )
 
-        # Reload the best weights before logging to MLflow
-        checkpoint_data = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        model.load_state_dict(checkpoint_data["model_state_dict"])
-        model_uri = log_model_artifact(
-            model,
-            checkpoint_path,
-            metadata,
-        )
+            # Reload the best weights before logging to MLflow
+            checkpoint_data = torch.load(checkpoint_path, map_location=device, weights_only=False)
+            model.load_state_dict(checkpoint_data["model_state_dict"])
+            model_uri = log_model_artifact(
+                model,
+                checkpoint_path,
+                metadata,
+            )
 
-        logger.info("MLflow run ID: %s", run.info.run_id)
-        logger.info("Logged model to %s", model_uri)
+            logger.info("MLflow run ID: %s", run_id)
+            logger.info("Logged model to %s", model_uri)
 
     logger.info("Training complete. Best validation accuracy: %.4f", best_val_accuracy)
     logger.info("Checkpoint saved to %s", checkpoint_path)

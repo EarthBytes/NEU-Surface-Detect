@@ -6,7 +6,12 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import sys
 from pathlib import Path
+
+# Add project root to Python path for SageMaker execution
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 
 # SageMaker sets SM_MODEL_DIR; training reads dataset from S3 via IAM role.
 os.environ.setdefault("DATA_SOURCE", "s3")

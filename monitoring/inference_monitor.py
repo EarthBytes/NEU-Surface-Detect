@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from monitoring.alerting import AlertManager
@@ -24,6 +26,9 @@ class InferenceMonitor:
         monitoring_cfg = config.get("monitoring", {})
         self.enabled = monitoring_cfg.get("enabled", True)
         self.log_path = resolve_path(monitoring_cfg.get("log_path", "models/monitoring/predictions.jsonl"))
+        self.save_feedback_images = monitoring_cfg.get("save_feedback_images", False)
+        self.feedback_dir = resolve_path(monitoring_cfg.get("feedback_dir", "dataset/feedback/inbox"))
+        self.low_confidence_threshold = monitoring_cfg.get("low_confidence_threshold", 0.5)
 
         baseline = brightness_baseline
         if baseline is None:
@@ -41,6 +46,8 @@ class InferenceMonitor:
 
         if self.enabled:
             self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.save_feedback_images:
+            self.feedback_dir.mkdir(parents=True, exist_ok=True)
 
     def record_prediction(
         self,
@@ -60,6 +67,7 @@ class InferenceMonitor:
             },
         )
         self._append_record(record)
+        self._maybe_archive_feedback_image(image_bytes, record)
 
         triggered = self.tracker.add(record)
         for alert in triggered:
@@ -81,6 +89,18 @@ class InferenceMonitor:
             ],
             **tracker_summary,
         }
+
+    def _maybe_archive_feedback_image(self, image_bytes: bytes, record: PredictionRecord) -> None:
+        if not self.save_feedback_images:
+            return
+        if record.confidence >= self.low_confidence_threshold:
+            return
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        filename = f"{timestamp}_{record.predicted_class}.jpg"
+        destination = self.feedback_dir / filename
+        destination.write_bytes(image_bytes)
+        logger.info("Archived low-confidence sample to %s", destination)
 
     def _append_record(self, record: PredictionRecord) -> None:
         with self.log_path.open("a", encoding="utf-8") as handle:

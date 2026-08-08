@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,26 @@ from training.utils import resolve_path
 logger = logging.getLogger(__name__)
 
 
+def _env_flag(name: str) -> str | None:
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    return value.strip().lower()
+
+
+def is_sagemaker_job() -> bool:
+    """True when running inside a SageMaker training container."""
+    return bool(os.environ.get("SM_TRAINING_ENV") or os.environ.get("TRAINING_JOB_NAME"))
+
+
+def is_remote_tracking_uri(tracking_uri: str) -> bool:
+    lowered = tracking_uri.strip().lower()
+    return lowered.startswith(("http://", "https://", "databricks"))
+
+
 def resolve_tracking_uri(tracking_uri: str) -> str:
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI", tracking_uri)
+
     if tracking_uri.startswith("sqlite:///"):
         db_path = tracking_uri.replace("sqlite:///", "", 1)
         if not Path(db_path).is_absolute():
@@ -23,6 +43,22 @@ def resolve_tracking_uri(tracking_uri: str) -> str:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{db_path}"
     return tracking_uri
+
+
+def is_mlflow_enabled(tracking_uri: str) -> bool:
+    explicit = _env_flag("MLFLOW_ENABLED")
+    if explicit is not None:
+        return explicit in {"1", "true", "yes", "on"}
+
+    resolved = os.environ.get("MLFLOW_TRACKING_URI", tracking_uri)
+    if is_sagemaker_job() and not is_remote_tracking_uri(resolved):
+        logger.info(
+            "Skipping MLflow on SageMaker: tracking URI %r is local/ephemeral. "
+            "Set MLFLOW_TRACKING_URI to an http(s) server to enable remote tracking.",
+            resolved,
+        )
+        return False
+    return True
 
 
 def configure_mlflow(tracking_uri: str, experiment_name: str) -> str:
@@ -72,9 +108,8 @@ def log_model_artifact(
 
     model_info = mlflow.pytorch.log_model(
         model,
-        name="model",
+        artifact_path="model",
         input_example=input_example,
-        serialization_format="pickle",
     )
     return model_info.model_uri
 
@@ -115,3 +150,81 @@ def promote_model_version(
         version,
         alias,
     )
+
+
+def log_evaluation_run(
+    mlflow_cfg: dict,
+    metrics: dict[str, float],
+    artifact_paths: dict[str, Path],
+    *,
+    run_id: str | None = None,
+    run_name: str | None = None,
+    extra_params: dict[str, str] | None = None,
+) -> str | None:
+    """Log evaluation metrics and artifacts to MLflow. Returns the run ID."""
+    if not is_mlflow_enabled(mlflow_cfg["tracking_uri"]):
+        return None
+
+    configure_mlflow(mlflow_cfg["tracking_uri"], mlflow_cfg["experiment_name"])
+
+    if run_id:
+        with mlflow.start_run(run_id=run_id):
+            if extra_params:
+                mlflow.log_params(extra_params)
+            log_summary_metrics(metrics)
+            for artifact_path, subdir in artifact_paths.items():
+                mlflow.log_artifact(artifact_path, artifact_path=subdir)
+        return run_id
+
+    resolved_name = run_name or "evaluation"
+    with mlflow.start_run(run_name=resolved_name) as run:
+        if extra_params:
+            mlflow.log_params(extra_params)
+        log_summary_metrics(metrics)
+        for artifact_path, subdir in artifact_paths.items():
+            mlflow.log_artifact(artifact_path, artifact_path=subdir)
+        return run.info.run_id
+
+
+def log_training_run_from_checkpoint(
+    checkpoint_path: Path,
+    config: dict,
+    *,
+    run_name: str | None = None,
+    tags: dict[str, str] | None = None,
+) -> str:
+    """Create an MLflow run for an existing checkpoint (e.g. after SageMaker training)."""
+    mlflow_cfg = config["mlflow"]
+    if not is_mlflow_enabled(mlflow_cfg["tracking_uri"]):
+        raise RuntimeError("MLflow is disabled for this environment.")
+
+    import torch
+
+    from training.model import build_model
+
+    configure_mlflow(mlflow_cfg["tracking_uri"], mlflow_cfg["experiment_name"])
+    checkpoint_data = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    metadata = checkpoint_data.get("metadata")
+    if metadata is None:
+        raise ValueError(f"Checkpoint {checkpoint_path} is missing metadata")
+
+    resolved_name = run_name or f"imported-{checkpoint_path.stem}"
+    with mlflow.start_run(run_name=resolved_name) as run:
+        log_training_params(config)
+        if tags:
+            mlflow.set_tags(tags)
+        mlflow.set_tag("processed_version", config["data"]["processed_version"])
+        mlflow.set_tag("source", tags.get("source", "import") if tags else "import")
+
+        summary = {}
+        if checkpoint_data.get("val_accuracy") is not None:
+            summary["best_val_accuracy"] = float(checkpoint_data["val_accuracy"])
+        if checkpoint_data.get("epoch") is not None:
+            summary["best_epoch"] = float(checkpoint_data["epoch"])
+        if summary:
+            log_summary_metrics(summary)
+
+        model = build_model(config["model"]["num_classes"])
+        model.load_state_dict(checkpoint_data["model_state_dict"])
+        log_model_artifact(model, checkpoint_path, metadata)
+        return run.info.run_id

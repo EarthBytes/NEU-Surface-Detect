@@ -157,6 +157,23 @@ def _build_hyperparameters(epochs_override: int | None) -> dict[str, str]:
     return {"epochs": str(epochs_override)}
 
 
+def _sagemaker_environment() -> dict[str, str]:
+    """Env vars injected into the training container.
+
+    Local sqlite MLflow tracking is ephemeral on SageMaker and requires
+    sqlalchemy (not shipped with mlflow-skinny). Disable by default; pass through
+    a remote MLFLOW_TRACKING_URI if the launcher environment has one.
+    """
+    env = {"DATA_SOURCE": "s3"}
+    tracking_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    if tracking_uri and tracking_uri.strip().lower().startswith(("http://", "https://", "databricks")):
+        env["MLFLOW_TRACKING_URI"] = tracking_uri.strip()
+        env["MLFLOW_ENABLED"] = os.environ.get("MLFLOW_ENABLED", "true")
+    else:
+        env["MLFLOW_ENABLED"] = os.environ.get("MLFLOW_ENABLED", "false")
+    return env
+
+
 def _resolve_model_uri_v3(trainer: Any, wait: bool) -> str:
     training_job = trainer._latest_training_job
     if training_job is None:
@@ -215,7 +232,7 @@ def _launch_with_sagemaker_v3(
         role=role,
         base_job_name=job_name,
         hyperparameters=hyperparameters or None,
-        environment={"DATA_SOURCE": "s3"},
+        environment=_sagemaker_environment(),
         sagemaker_session=session,
     )
 
@@ -253,7 +270,7 @@ def _launch_with_sagemaker_v2(
         framework_version=aws_cfg.pytorch_version,
         py_version=aws_cfg.python_version,
         hyperparameters=hyperparameters or None,
-        environment={"DATA_SOURCE": "s3"},
+        environment=_sagemaker_environment(),
         max_run=aws_cfg.max_runtime_seconds,
         output_path=output_path,
         sagemaker_session=session,
