@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-import mlflow
 import numpy as np
 import torch
 import torch.nn as nn
@@ -24,31 +23,12 @@ from sklearn.metrics import (
 from data_ingestion.config import CLASS_NAMES
 from training.data_source import DatasetSourceError, resolve_processed_root
 from training.dataset import create_dataloaders
-from training.mlflow_tracking import configure_mlflow, log_summary_metrics
+from training.metrics import collect_predictions, summarise_misclassifications
+from training.mlflow_tracking import is_mlflow_enabled, log_evaluation_run
 from training.model import build_model
 from training.utils import get_device, load_config, resolve_path, setup_logging
 
 logger = setup_logging(__name__)
-
-
-def collect_predictions(
-    model: nn.Module,
-    loader: torch.utils.data.DataLoader,
-    device: torch.device,
-) -> tuple[list[int], list[int]]:
-    model.eval()
-    all_labels: list[int] = []
-    all_preds: list[int] = []
-
-    with torch.no_grad():
-        for images, labels in loader:
-            images = images.to(device)
-            outputs = model(images)
-            preds = outputs.argmax(dim=1).cpu().tolist()
-            all_preds.extend(preds)
-            all_labels.extend(labels.tolist())
-
-    return all_labels, all_preds
 
 
 def save_confusion_matrix(
@@ -88,31 +68,6 @@ def save_confusion_matrix(
     plt.close(fig)
 
 
-def summarise_misclassifications(
-    y_true: list[int],
-    y_pred: list[int],
-    class_names: list[str],
-) -> list[dict[str, str | int]]:
-    pairs: dict[tuple[int, int], int] = {}
-    for true_label, pred_label in zip(y_true, y_pred):
-        if true_label != pred_label:
-            key = (true_label, pred_label)
-            pairs[key] = pairs.get(key, 0) + 1
-
-    return [
-        {
-            "true_class": class_names[true_label],
-            "predicted_class": class_names[pred_label],
-            "count": count,
-        }
-        for (true_label, pred_label), count in sorted(
-            pairs.items(),
-            key=lambda item: item[1],
-            reverse=True,
-        )
-    ]
-
-
 def evaluate(
     config_path: Path | None = None,
     checkpoint_path: Path | None = None,
@@ -136,7 +91,10 @@ def evaluate(
         batch_size=config["training"]["batch_size"],
         num_workers=config["training"]["num_workers"],
         aug_cfg=config["augmentation"],
+        splits=("test",),
     )
+    if test_loader is None:
+        raise RuntimeError("Test dataloader was not created.")
 
     checkpoint_data = torch.load(checkpoint, map_location=device, weights_only=False)
     model = build_model(model_cfg["num_classes"])
@@ -173,23 +131,33 @@ def evaluate(
     save_confusion_matrix(matrix, CLASS_NAMES, matrix_path)
     np.savetxt(matrix_csv_path, matrix, fmt="%d", delimiter=",", header=",".join(CLASS_NAMES))
 
-    configure_mlflow(mlflow_cfg["tracking_uri"], mlflow_cfg["experiment_name"])
     resolved_run_id = run_id or checkpoint_data.get("run_id")
-    if resolved_run_id:
-        with mlflow.start_run(run_id=resolved_run_id):
-            log_summary_metrics(
-                {
-                    "test_accuracy": metrics["test_accuracy"],
-                    "test_precision_macro": metrics["test_precision_macro"],
-                    "test_recall_macro": metrics["test_recall_macro"],
-                    "test_f1_macro": metrics["test_f1_macro"],
-                }
-            )
-            mlflow.log_artifact(str(metrics_path), artifact_path="evaluation")
-            mlflow.log_artifact(str(matrix_path), artifact_path="evaluation")
-            logger.info("Logged test metrics to MLflow run %s", resolved_run_id)
+    mlflow_metrics = {
+        "test_accuracy": metrics["test_accuracy"],
+        "test_precision_macro": metrics["test_precision_macro"],
+        "test_recall_macro": metrics["test_recall_macro"],
+        "test_f1_macro": metrics["test_f1_macro"],
+    }
+    logged_run_id = log_evaluation_run(
+        mlflow_cfg,
+        mlflow_metrics,
+        {
+            str(metrics_path): "evaluation",
+            str(matrix_path): "evaluation",
+        },
+        run_id=resolved_run_id,
+        run_name=f"evaluation-{Path(checkpoint).stem}",
+        extra_params={
+            "checkpoint": str(checkpoint),
+            "processed_version": data_cfg["processed_version"],
+        },
+    )
+    if logged_run_id:
+        logger.info("Logged test metrics to MLflow run %s", logged_run_id)
+    elif is_mlflow_enabled(mlflow_cfg["tracking_uri"]):
+        logger.warning("MLflow logging was skipped unexpectedly")
     else:
-        logger.warning("No MLflow run ID found; test metrics saved locally only")
+        logger.info("MLflow disabled; test metrics saved locally only")
 
     logger.info("Test accuracy:  %.4f", metrics["test_accuracy"])
     logger.info("Precision (macro): %.4f", metrics["test_precision_macro"])

@@ -54,6 +54,15 @@ monitoring:
   low_confidence_threshold: 0.5
   class_share_threshold: 0.6
   brightness_tolerance: 0.15
+  save_feedback_images: true
+  feedback_dir: dataset/feedback/inbox
+
+retraining:
+  experiment_name: neu-surface-defect-retraining
+  min_improvement: 0.0
+  champion_checkpoint: models/checkpoints/best_model.pt
+  challenger_checkpoint: models/checkpoints/challenger_model.pt
+  comparison_output: models/evaluation/comparison.json
 
 # AWS SageMaker GPU training (launched from your machine via launch_aws_training).
 # Credentials and role ARN come from the environment — never commit secrets.

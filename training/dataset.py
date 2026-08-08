@@ -9,6 +9,8 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
+VALID_SPLITS = frozenset({"train", "validation", "test"})
+
 
 def load_metadata(processed_root: Path) -> dict:
     metadata_path = processed_root / "metadata.json"
@@ -46,30 +48,44 @@ def create_dataloaders(
     batch_size: int,
     num_workers: int,
     aug_cfg: dict,
-) -> tuple[DataLoader, DataLoader, DataLoader, dict]:
+    splits: tuple[str, ...] = ("train", "validation", "test"),
+) -> tuple[DataLoader | None, DataLoader | None, DataLoader | None, dict]:
+    unknown = set(splits) - VALID_SPLITS
+    if unknown:
+        raise ValueError(f"Unknown splits: {sorted(unknown)}. Expected subset of {sorted(VALID_SPLITS)}")
+    if not splits:
+        raise ValueError("At least one split must be requested.")
+
     metadata = load_metadata(processed_root)
-
-    train_dataset = datasets.ImageFolder(
-        processed_root / "train",
-        transform=build_transforms(metadata, augment=True, aug_cfg=aug_cfg),
-    )
-    val_dataset = datasets.ImageFolder(
-        processed_root / "validation",
-        transform=build_transforms(metadata, augment=False, aug_cfg=aug_cfg),
-    )
-    test_dataset = datasets.ImageFolder(
-        processed_root / "test",
-        transform=build_transforms(metadata, augment=False, aug_cfg=aug_cfg),
-    )
-
     loader_kwargs = {
         "batch_size": batch_size,
         "num_workers": num_workers,
         "pin_memory": torch.cuda.is_available(),
     }
 
-    train_loader = DataLoader(train_dataset, shuffle=True, **loader_kwargs)
-    val_loader = DataLoader(val_dataset, shuffle=False, **loader_kwargs)
-    test_loader = DataLoader(test_dataset, shuffle=False, **loader_kwargs)
+    train_loader: DataLoader | None = None
+    val_loader: DataLoader | None = None
+    test_loader: DataLoader | None = None
+
+    if "train" in splits:
+        train_dataset = datasets.ImageFolder(
+            processed_root / "train",
+            transform=build_transforms(metadata, augment=True, aug_cfg=aug_cfg),
+        )
+        train_loader = DataLoader(train_dataset, shuffle=True, **loader_kwargs)
+
+    if "validation" in splits:
+        val_dataset = datasets.ImageFolder(
+            processed_root / "validation",
+            transform=build_transforms(metadata, augment=False, aug_cfg=aug_cfg),
+        )
+        val_loader = DataLoader(val_dataset, shuffle=False, **loader_kwargs)
+
+    if "test" in splits:
+        test_dataset = datasets.ImageFolder(
+            processed_root / "test",
+            transform=build_transforms(metadata, augment=False, aug_cfg=aug_cfg),
+        )
+        test_loader = DataLoader(test_dataset, shuffle=False, **loader_kwargs)
 
     return train_loader, val_loader, test_loader, metadata

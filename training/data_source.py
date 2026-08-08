@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -72,6 +74,60 @@ def _local_processed_marker(dataset_cfg: DatasetConfig) -> Path:
         / dataset_cfg.processed_version
         / "metadata.json"
     )
+
+
+def _processed_root_from_cache(cache_root: Path, version: str) -> Path:
+    return cache_root / "processed" / version
+
+
+def _count_class_images(split_dir: Path, class_name: str) -> int:
+    class_dir = split_dir / class_name
+    if not class_dir.is_dir():
+        return 0
+    return len(list(class_dir.glob("*.jpg")))
+
+
+def _count_split_on_disk(processed_root: Path, split_name: str, class_names: list[str]) -> dict[str, int]:
+    split_dir = processed_root / split_name
+    return {class_name: _count_class_images(split_dir, class_name) for class_name in class_names}
+
+
+def processed_dataset_is_complete(processed_root: Path) -> bool:
+    """Return True when on-disk image counts match metadata.json split counts."""
+    metadata_path = processed_root / "metadata.json"
+    if not metadata_path.is_file():
+        return False
+
+    try:
+        metadata = json.loads(metadata_path.read_text())
+    except json.JSONDecodeError:
+        return False
+
+    expected_splits: dict[str, dict[str, int]] = metadata.get("splits", {})
+    class_names: list[str] = metadata.get("class_names", [])
+    if not expected_splits or not class_names:
+        return False
+
+    for split_name, expected_counts in expected_splits.items():
+        split_dir = processed_root / split_name
+        if not split_dir.is_dir():
+            logger.debug("Missing split directory: %s", split_dir)
+            return False
+
+        actual_counts = _count_split_on_disk(processed_root, split_name, class_names)
+        for class_name, expected in expected_counts.items():
+            actual = actual_counts.get(class_name, 0)
+            if actual != expected:
+                logger.debug(
+                    "Cache mismatch at %s/%s: expected %d images, found %d",
+                    split_name,
+                    class_name,
+                    expected,
+                    actual,
+                )
+                return False
+
+    return True
 
 
 def _sync_s3_prefix(bucket: str, prefix: str, destination: Path) -> None:
@@ -152,10 +208,23 @@ def _sync_s3_prefix(bucket: str, prefix: str, destination: Path) -> None:
 
 def ensure_s3_dataset_cached(dataset_cfg: DatasetConfig) -> Path:
     """Download the S3 dataset into the cache if not already present."""
-    marker = _s3_processed_marker(dataset_cfg, dataset_cfg.cache_dir)
-    if marker.is_file():
+    processed_root = _processed_root_from_cache(
+        dataset_cfg.cache_dir,
+        dataset_cfg.processed_version,
+    )
+
+    if processed_dataset_is_complete(processed_root):
         logger.info("Using cached S3 dataset at %s", dataset_cfg.cache_dir)
         return dataset_cfg.cache_dir
+
+    if processed_root.exists():
+        logger.warning(
+            "Incomplete cached dataset at %s; re-downloading from s3://%s/%s",
+            processed_root,
+            dataset_cfg.bucket,
+            dataset_cfg.prefix,
+        )
+        shutil.rmtree(processed_root.parent)
 
     logger.info(
         "Downloading dataset from s3://%s/%s ...",
@@ -164,11 +233,11 @@ def ensure_s3_dataset_cached(dataset_cfg: DatasetConfig) -> Path:
     )
     _sync_s3_prefix(dataset_cfg.bucket, dataset_cfg.prefix, dataset_cfg.cache_dir)
 
-    if not marker.is_file():
+    if not processed_dataset_is_complete(processed_root):
+        marker = _s3_processed_marker(dataset_cfg, dataset_cfg.cache_dir)
         raise DatasetSourceError(
-            f"S3 sync completed but expected processed data at {marker}. "
-            f"Ensure s3://{dataset_cfg.bucket}/{dataset_cfg.prefix} contains "
-            f"processed/{dataset_cfg.processed_version}/metadata.json."
+            f"S3 sync completed but processed dataset at {processed_root} is incomplete. "
+            f"Expected a complete layout with metadata at {marker}."
         )
 
     return dataset_cfg.cache_dir
@@ -186,6 +255,11 @@ def resolve_processed_root(config: dict) -> Path:
             raise FileNotFoundError(
                 f"Missing processed dataset at {processed_root}. "
                 "Run data_ingestion.preprocess or switch dataset.source to s3."
+            )
+        if not processed_dataset_is_complete(processed_root):
+            raise DatasetSourceError(
+                f"Local processed dataset at {processed_root} is incomplete. "
+                "Re-run: python -m data_ingestion.preprocess --overwrite"
             )
         logger.info("Using local processed dataset at %s", processed_root)
         return processed_root
