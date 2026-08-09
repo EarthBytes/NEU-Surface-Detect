@@ -1,6 +1,8 @@
 """Request and response schemas for the inference API."""
 
-from typing import Dict, List, Optional
+from __future__ import annotations
+
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -8,13 +10,13 @@ from pydantic import BaseModel, Field
 class HealthResponse(BaseModel):
     status: str
     model_loaded: bool
-    classes: List[str] = Field(default_factory=list)
+    classes: list[str] = Field(default_factory=list)
 
 
 class PredictionResponse(BaseModel):
     predicted_class: str
     confidence: float
-    probabilities: Dict[str, float]
+    probabilities: dict[str, float]
 
 
 class MonitoringSummaryResponse(BaseModel):
@@ -24,5 +26,5 @@ class MonitoringSummaryResponse(BaseModel):
     average_confidence: Optional[float] = None
     average_brightness: Optional[float] = None
     low_confidence_rate: Optional[float] = None
-    class_distribution: Dict[str, int] = Field(default_factory=dict)
-    recent_alerts: List[Dict[str, str]] = Field(default_factory=list)
+    class_distribution: dict[str, int] = Field(default_factory=dict)
+    recent_alerts: list[dict[str, str]] = Field(default_factory=list)

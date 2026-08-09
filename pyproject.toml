@@ -9,6 +9,18 @@ description = "MLOps pipeline for NEU surface defect classification"
 readme = "README.md"
 requires-python = ">=3.10"
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "httpx>=0.27.0",
+    "ruff>=0.4.0",
+]
+aws = [
+    "sagemaker>=2.200.0",
+    "boto3>=1.28.0",
+    "python-dotenv>=1.0.0",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["data_ingestion*", "training*", "inference*", "monitoring*"]

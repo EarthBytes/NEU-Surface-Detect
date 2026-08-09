@@ -60,8 +60,9 @@ def check_project_layout() -> bool:
         "models",
         "inference",
         "monitoring",
-        "cicd",
+        ".github/workflows",
         "requirements.txt",
+        "requirements-dev.txt",
     ]
     missing = [name for name in expected if not (root / name).exists()]
     if missing:

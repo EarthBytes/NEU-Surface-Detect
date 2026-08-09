@@ -10,22 +10,12 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-)
 
 from data_ingestion.config import CLASS_NAMES
-from training.data_source import DatasetSourceError, resolve_processed_root
-from training.dataset import create_dataloaders
-from training.metrics import collect_predictions, summarise_misclassifications
+from training.data_source import DatasetSourceError
+from training.metrics import evaluate_checkpoint
 from training.mlflow_tracking import is_mlflow_enabled, log_evaluation_run
-from training.model import build_model
-from training.utils import get_device, load_config, resolve_path, setup_logging
+from training.utils import load_config, resolve_path, setup_logging
 
 logger = setup_logging(__name__)
 
@@ -74,54 +64,16 @@ def evaluate(
 ) -> Path:
     config = load_config(config_path)
     data_cfg = config["data"]
-    model_cfg = config["model"]
     mlflow_cfg = config["mlflow"]
-    device = get_device()
-
-    processed_root = resolve_processed_root(config)
     checkpoint = checkpoint_path or (
         resolve_path(config["paths"]["checkpoints"]) / config["training"]["checkpoint_name"]
     )
     evaluation_dir = resolve_path(config["paths"]["evaluation"])
     evaluation_dir.mkdir(parents=True, exist_ok=True)
 
-    _, _, test_loader, _ = create_dataloaders(
-        processed_root=processed_root,
-        batch_size=config["training"]["batch_size"],
-        num_workers=config["training"]["num_workers"],
-        aug_cfg=config["augmentation"],
-        splits=("test",),
-    )
-    if test_loader is None:
-        raise RuntimeError("Test dataloader was not created.")
+    metrics = evaluate_checkpoint(checkpoint, config_path)
+    matrix = np.array(metrics["confusion_matrix"])
 
-    checkpoint_data = torch.load(checkpoint, map_location=device, weights_only=False)
-    model = build_model(model_cfg["num_classes"])
-    model.load_state_dict(checkpoint_data["model_state_dict"])
-    model.to(device)
-
-    y_true, y_pred = collect_predictions(model, test_loader, device)
-
-    metrics = {
-        "test_accuracy": float(accuracy_score(y_true, y_pred)),
-        "test_precision_macro": float(
-            precision_score(y_true, y_pred, average="macro", zero_division=0)
-        ),
-        "test_recall_macro": float(recall_score(y_true, y_pred, average="macro", zero_division=0)),
-        "test_f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
-        "checkpoint": str(checkpoint),
-        "processed_version": data_cfg["processed_version"],
-        "classification_report": classification_report(
-            y_true,
-            y_pred,
-            target_names=CLASS_NAMES,
-            output_dict=True,
-            zero_division=0,
-        ),
-        "misclassifications": summarise_misclassifications(y_true, y_pred, CLASS_NAMES),
-    }
-
-    matrix = confusion_matrix(y_true, y_pred)
     metrics_path = evaluation_dir / "metrics.json"
     matrix_path = evaluation_dir / "confusion_matrix.png"
     matrix_csv_path = evaluation_dir / "confusion_matrix.csv"
@@ -130,7 +82,8 @@ def evaluate(
     save_confusion_matrix(matrix, CLASS_NAMES, matrix_path)
     np.savetxt(matrix_csv_path, matrix, fmt="%d", delimiter=",", header=",".join(CLASS_NAMES))
 
-    resolved_run_id = run_id or checkpoint_data.get("run_id")
+    checkpoint_data = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    resolved_run_id = run_id or metrics.get("run_id") or checkpoint_data.get("run_id")
     mlflow_metrics = {
         "test_accuracy": metrics["test_accuracy"],
         "test_precision_macro": metrics["test_precision_macro"],

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from importlib import import_module
 from io import BytesIO
 from pathlib import Path
@@ -11,7 +12,15 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from inference.predictor import DefectPredictor
-from tests.create_fixture_checkpoint import DEFAULT_METADATA, create_checkpoint
+
+# Load from this directory to avoid collision with SageMaker's top-level `tests` package.
+_fixture_module_path = Path(__file__).with_name("create_fixture_checkpoint.py")
+_spec = importlib.util.spec_from_file_location("create_fixture_checkpoint", _fixture_module_path)
+assert _spec and _spec.loader
+_fixture_module = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_fixture_module)
+DEFAULT_METADATA = _fixture_module.DEFAULT_METADATA
+create_checkpoint = _fixture_module.create_checkpoint
 
 inference_app = import_module("inference.app")
 
