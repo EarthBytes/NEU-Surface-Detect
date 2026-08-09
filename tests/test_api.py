@@ -17,11 +17,15 @@ def test_health_ok_when_model_loaded(api_client) -> None:
 
 
 def test_health_degraded_without_model() -> None:
-    with TestClient(inference_app.app) as client:
-        inference_app.predictor = None
-        response = client.get("/health")
-        assert response.status_code == 200
-        assert response.json()["status"] == "degraded"
+    original = inference_app.predictor
+    try:
+        with TestClient(inference_app.app) as client:
+            inference_app.predictor = None
+            response = client.get("/health")
+            assert response.status_code == 200
+            assert response.json()["status"] == "degraded"
+    finally:
+        inference_app.predictor = original
 
 
 def test_predict_returns_class_and_confidence(api_client, sample_image_bytes) -> None:

@@ -15,6 +15,7 @@ models/evaluation/
 models/monitoring/
 models/mlruns/
 models/mlflow.db
+models/*.bak
 
 # Pycache and MLruns
 training/__pycache__
