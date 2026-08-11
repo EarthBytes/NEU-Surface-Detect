@@ -11,7 +11,9 @@ dataset
 
 # Model outputs
 models/checkpoints/
-models/evaluation/
+models/evaluation/comparison.json
+models/evaluation/confusion_matrix.csv
+models/evaluation/metrics.json
 models/monitoring/
 models/mlruns/
 models/mlflow.db
