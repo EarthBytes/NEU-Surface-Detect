@@ -2,7 +2,7 @@
 
 End-to-end MLOps pipeline for **automated steel surface-defect classification**, built on the [NEU Surface Defect dataset](https://www.kaggle.com/datasets/kaustubhdikshit/neu-surface-defect-database).
 
-The project takes the dataset from raw images through preprocessing, GPU training on AWS SageMaker, experiment tracking, model evaluation, FastAPI inference, Docker deployment, CI/CD, monitoring, and automated retraining.
+The project takes the dataset from raw images through preprocessing, GPU training on AWS SageMaker, experiment tracking, model evaluation, FastAPI inference, Docker containerisation, Kubernetes orchestration, CI/CD, monitoring, and automated retraining.
 
 The goal was to go beyond just training a CNN and saving the resulting model. I wanted to build the infrastructure around it as well, so that data, experiments, models, and predictions can all be tracked and the model can be retrained and evaluated without manually piecing everything together.
 
@@ -63,7 +63,8 @@ The first version uses a ResNet18 with pretrained ImageNet weights. The 99.07% r
 | Tracking | MLflow (experiments + model registry) | Training parameters and metrics are recorded for each run, while the model registry keeps track of model versions and which one is being considered for production. |
 | API | FastAPI, Uvicorn | Provides a small, typed inference API with automatically generated OpenAPI documentation. |
 | Data | Pillow, scikit-learn, pandas, NumPy | Handles image loading and preprocessing, dataset splitting, and the supporting data and evaluation work. |
-| DevOps | Docker, GitHub Actions, Ruff, pytest | Docker packages the inference service, while GitHub Actions runs linting, tests, and a container health check on pushes and pull requests. |
+| DevOps | Docker, Kubernetes, GitHub Actions, Ruff, pytest | Docker packages the inference service. Kubernetes runs it at scale with health probes, autoscaling, and rolling updates. GitHub Actions runs linting, tests, container health checks, and manifest validation. |
+| Orchestration | Kubernetes (kind), Deployments, Services, HPA, Ingress | The FastAPI inference API runs as a containerised Deployment behind a Service, with ConfigMaps for configuration, liveness/readiness probes, resource limits, and a Horizontal Pod Autoscaler. |
 | Monitoring | Custom drift detection + JSONL prediction logs | A lightweight custom solution was enough for a single model and endpoint, without adding the overhead of a larger monitoring platform. |
 
 ## Project structure
@@ -74,9 +75,10 @@ NEU-Surface-Detect/
 ├── training/           # Train, evaluate, SageMaker, MLflow, retrain
 ├── models/             # Checkpoints, evaluation, MLflow DB
 ├── inference/          # FastAPI service + Dockerfile
+├── k8s/                # Kubernetes manifests (Deployment, Service, HPA, Ingress)
 ├── monitoring/         # Drift detection and prediction logging
-├── .github/workflows/  # CI: lint, test, Docker build
-├── scripts/            # Setup, MLflow UI, env checks
+├── .github/workflows/  # CI: lint, test, Docker build, k8s validation
+├── scripts/            # Setup, MLflow UI, Kubernetes deploy scripts
 ├── tests/              # pytest suite
 ├── dataset/            # Local raw/processed data (gitignored)
 ```
@@ -93,12 +95,34 @@ This sets up the local environment and checks that the required dependencies are
 
 For the full pipeline see **[COMMANDS.md](COMMANDS.md)**.
 
+## Kubernetes deployment
+
+The inference API is orchestrated on Kubernetes using manifests in `k8s/`:
+
+- **Deployment** — FastAPI + PyTorch model with liveness/readiness probes and resource limits
+- **Service** — cluster-internal load balancing
+- **ConfigMap** — non-sensitive runtime config (`MODEL_CHECKPOINT`, environment labels)
+- **HPA** — horizontal pod autoscaling on CPU
+- **Ingress** — external routing via NGINX (`neu-surface-detect.local`)
+
+Quick start (local [kind](https://kind.sigs.k8s.io/) cluster):
+
+```bash
+bash scripts/k8s_setup.sh      # cluster, metrics-server, ingress
+bash scripts/k8s_deploy.sh     # build image, load into kind, apply manifests
+kubectl port-forward service/neu-surface-detect-service 8000:80 -n neu-surface-detect
+curl http://localhost:8000/health
+```
+
+See **[COMMANDS.md](COMMANDS.md)** section 10.
+
 ## Requirements
 
 - Python 3.10 or 3.11
 - macOS, Linux, or WSL
 - AWS account (optional, for SageMaker training)
 - Docker (optional, for containerised inference)
+- kind + kubectl (optional, for local Kubernetes)
 
 ## CI/CD
 
@@ -107,7 +131,8 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push and PR:
 1. **Lint** - Ruff
 2. **Test** - pytest
 3. **Docker** - build image, start container, health-check `/health`
-4. **Deploy** - staging/production placeholders on `main`
+4. **K8s validate** — dry-run apply of Kubernetes manifests
+5. **Deploy** — push image to GHCR on `main` (cluster apply when kubeconfig secrets are configured)
 
 ## Licence
 

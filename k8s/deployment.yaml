@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neu-surface-detect-api
+  namespace: neu-surface-detect
+  labels:
+    app: neu-surface-detect-api
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: neu-surface-detect-api
+  template:
+    metadata:
+      labels:
+        app: neu-surface-detect-api
+    spec:
+      containers:
+        - name: api
+          image: neu-surface-detect-api:v1
+          imagePullPolicy: Never   # required for kind + locally built images
+
+          ports:
+            - name: http
+              containerPort: 8000
+
+          envFrom:
+            - configMapRef:
+                name: neu-surface-detect-config
+
+          volumeMounts:
+            - name: monitoring-data
+              mountPath: /app/models/monitoring
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "3Gi"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 5
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            failureThreshold: 6
+
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 18
+      volumes:
+        - name: monitoring-data
+          emptyDir: {}

@@ -29,3 +29,6 @@ mlruns/
 
 # Env files
 .env
+
+# K8s
+k8s/secret.yaml
