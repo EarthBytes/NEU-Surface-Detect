@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: neu-surface-detect-api
+  namespace: neu-surface-detect
+  labels:
+    app: neu-surface-detect-api
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: neu-surface-detect-api
+  template:
+    metadata:
+      labels:
+        app: neu-surface-detect-api
+    spec:
+      initContainers:
+        - name: download-model
+          image: amazon/aws-cli:2.22.35
+          envFrom:
+            - secretRef:
+                name: neu-aws-credentials
+          env:
+            - name: S3_MODEL_URI
+              valueFrom:
+                configMapKeyRef:
+                  name: neu-surface-detect-config
+                  key: S3_MODEL_URI
+          command:
+            - /bin/sh
+            - -ec
+            - |
+              test -n "$S3_MODEL_URI"
+              aws s3 cp "$S3_MODEL_URI" /models/best_model.pt
+          volumeMounts:
+            - name: model-data
+              mountPath: /models
+      containers:
+        - name: api
+          image: neu-surface-detect-api:v1
+          imagePullPolicy: Never
+
+          ports:
+            - name: http
+              containerPort: 8000
+
+          envFrom:
+            - configMapRef:
+                name: neu-surface-detect-config
+            - secretRef:
+                name: neu-aws-credentials
+
+          volumeMounts:
+            - name: model-data
+              mountPath: /models
+              readOnly: true
+            - name: monitoring-data
+              mountPath: /app/models/monitoring
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: model-data
+          emptyDir: {}
+        - name: monitoring-data
+          emptyDir: {}

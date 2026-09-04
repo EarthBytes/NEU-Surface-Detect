@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neu-surface-detect-config
+  namespace: neu-surface-detect
+data:
+  MODEL_CHECKPOINT: "/models/best_model.pt"
+  S3_MODEL_URI: "s3://neu-cnn-surface-detect/models/checkpoints/best_model.pt"
+  ENVIRONMENT: "kubernetes"
+  LOG_LEVEL: "INFO"

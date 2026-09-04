@@ -214,7 +214,110 @@ python tests/create_fixture_checkpoint.py
 
 ---
 
-## 10. Environment variables reference
+## 10. Kubernetes (local kind)
+
+### One-time cluster bootstrap
+
+Install tools:
+
+```bash
+brew install kind kubectl
+```
+
+Create the cluster, metrics-server, and ingress controller:
+
+```bash
+bash scripts/k8s_setup.sh
+```
+
+Optional: create the AWS secret for S3 model download mode:
+
+```bash
+CREATE_AWS_SECRET=true bash scripts/k8s_setup.sh
+```
+
+### Build, load, and deploy (phase 1 — model in image)
+
+```bash
+# Ensure checkpoint exists
+ls models/checkpoints/best_model.pt
+
+# Build image, load into kind, apply manifests
+bash scripts/k8s_deploy.sh
+
+# Custom image tag
+IMAGE_TAG=v2 bash scripts/k8s_deploy.sh
+```
+
+Apply manifests manually:
+
+```bash
+kubectl apply -k k8s/
+kubectl rollout status deployment/neu-surface-detect-api -n neu-surface-detect
+```
+
+### Access the API
+
+Port-forward the Service:
+
+```bash
+kubectl port-forward service/neu-surface-detect-service 8000:80 -n neu-surface-detect
+curl http://localhost:8000/health
+```
+
+Ingress via NGINX (add `127.0.0.1 neu-surface-detect.local` to `/etc/hosts`):
+
+```bash
+kubectl port-forward -n ingress-nginx service/ingress-nginx-controller 8080:80
+curl http://neu-surface-detect.local:8080/health
+```
+
+### Autoscaling (HPA)
+
+```bash
+kubectl get hpa -n neu-surface-detect
+bash scripts/k8s_load_test.sh
+```
+
+### Rolling model update
+
+```bash
+docker build -f inference/Dockerfile -t neu-surface-detect-api:v2 .
+kind load docker-image neu-surface-detect-api:v2 --name neu-surface-detect
+kubectl set image deployment/neu-surface-detect-api \
+  api=neu-surface-detect-api:v2 -n neu-surface-detect
+kubectl rollout status deployment/neu-surface-detect-api -n neu-surface-detect
+```
+
+### Phase 2 — download model from S3 at startup
+
+1. Upload `best_model.pt` to S3 (default URI in `k8s/configmap-s3.yaml`).
+2. Create the cluster secret (never commit real credentials):
+
+```bash
+CREATE_AWS_SECRET=true bash scripts/k8s_setup.sh
+```
+
+3. Deploy the S3 overlay:
+
+```bash
+MODEL_SOURCE=s3 bash scripts/k8s_deploy.sh
+```
+
+### Useful commands
+
+```bash
+kubectl get pods,svc,hpa,ingress -n neu-surface-detect
+kubectl logs deployment/neu-surface-detect-api -n neu-surface-detect -f
+kubectl top pods -n neu-surface-detect
+kubectl rollout undo deployment/neu-surface-detect-api -n neu-surface-detect
+```
+
+See also: [Kubernetes-Plan.md](Kubernetes-Plan.md)
+
+---
+
+## 11. Environment variables reference
 
 | Variable | Purpose |
 |----------|---------|
