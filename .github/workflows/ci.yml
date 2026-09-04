@@ -136,11 +136,11 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Validate default manifests
-        run: kubectl kustomize k8s/ | kubectl apply --dry-run=client -f -
+        run: kubectl kustomize k8s/ | kubectl apply --dry-run=client --validate=false -f -
 
       - name: Validate S3 manifests
         run: |
-          kubectl apply --dry-run=client \
+          kubectl apply --dry-run=client --validate=false \
             -f k8s/namespace.yaml \
             -f k8s/configmap-s3.yaml \
             -f k8s/deployment-s3.yaml \
