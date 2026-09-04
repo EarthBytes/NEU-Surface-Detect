@@ -147,12 +147,12 @@ jobs:
       - name: Validate S3 manifests
         run: |
           kubeconform -strict -summary \
-            -f k8s/namespace.yaml \
-            -f k8s/configmap-s3.yaml \
-            -f k8s/deployment-s3.yaml \
-            -f k8s/service.yaml \
-            -f k8s/hpa.yaml \
-            -f k8s/ingress.yaml
+            k8s/namespace.yaml \
+            k8s/configmap-s3.yaml \
+            k8s/deployment-s3.yaml \
+            k8s/service.yaml \
+            k8s/hpa.yaml \
+            k8s/ingress.yaml
 
   deploy-staging:
     name: Deploy to staging
