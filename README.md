@@ -131,7 +131,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every push and PR:
 1. **Lint** - Ruff
 2. **Test** - pytest
 3. **Docker** - build image, start container, health-check `/health`
-4. **K8s validate** — dry-run apply of Kubernetes manifests
+4. **K8s validate** — kubeconform schema validation of Kubernetes manifests
 5. **Deploy** — push image to GHCR on `main` (cluster apply when kubeconfig secrets are configured)
 
 ## Licence
